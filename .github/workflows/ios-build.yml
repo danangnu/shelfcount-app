@@ -1,5 +1,6 @@
-# Build check: generates the Xcode project and compiles the iPhone app for the simulator.
-# Needs no Apple account, certificates or secrets. It only proves that the app compiles.
+# Build check for the iPhone app. Needs no Apple account, certificates or secrets.
+#  - build:       compiles the app for the iPhone simulator (proves the Swift code compiles)
+#  - model-check: checks that the iPhone's Core ML model gives the same output as the server's ONNX model
 # Signing and the upload to TestFlight come in a separate workflow.
 name: iOS build check
 
@@ -9,17 +10,22 @@ on:
     paths:
       - "ios/**"
       - "models/**"
+      - "scripts/check_coreml.py"
       - ".github/workflows/ios-build.yml"
   pull_request:
     paths:
       - "ios/**"
       - "models/**"
+      - "scripts/check_coreml.py"
       - ".github/workflows/ios-build.yml"
   workflow_dispatch:   # lets you start it by hand from the Actions tab
 
 concurrency:
   group: ios-build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -29,42 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false   # keep this repo's token out of git, so it is not sent to other repositories
+          persist-credentials: false
 
-      - name: Show tool versions
-        run: |
-          xcodebuild -version
-          git --version
-
-      - name: Check that the runner can reach the ONNX Runtime package
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          git ls-remote --tags https://github.com/microsoft/onnxruntime-swift-package-manager 2>&1 | tail -n 8 | tee ios/git-check.log
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
 
-      - name: Copy the model into the app and generate the Xcode project
+      - name: Compile the Core ML model and generate the Xcode project
         run: bash ios/setup.sh
-
-      - name: Download Swift packages (up to 3 attempts)
-        working-directory: ios
-        run: |
-          set -o pipefail
-          for attempt in 1 2 3; do
-            echo "::group::Attempt $attempt"
-            if xcodebuild -resolvePackageDependencies \
-                 -project ShelfCount.xcodeproj -scheme ShelfCount \
-                 -scmProvider system 2>&1 | tee resolve.log; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "::endgroup::"
-            echo "Attempt $attempt failed."
-            [ "$attempt" -lt 3 ] && sleep 20
-          done
-          exit 1
 
       - name: Build
         working-directory: ios
@@ -75,9 +55,16 @@ jobs:
             -scheme ShelfCount \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            -scmProvider system \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build.log
+
+      - name: Check the model is inside the app
+        working-directory: ios
+        run: |
+          APP=$(find ~/Library/Developer/Xcode/DerivedData -path '*Debug-iphonesimulator/ShelfCount.app' -type d | head -1)
+          echo "App: $APP"
+          ls "$APP/ShelfCountModel.mlmodelc"
+          echo "Model is bundled." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarise what failed
         if: failure()
@@ -86,23 +73,45 @@ jobs:
           {
             echo "### What failed"
             echo '```'
-            for f in resolve.log build.log; do
-              if [ -f "$f" ]; then
-                echo "--- $f ---"
-                grep -E -A 8 "error:|Failed to clone|fatal:" "$f" | head -120 || echo "(no error lines found)"
-              fi
-            done
-            if [ -f git-check.log ]; then echo "--- plain git check of the package repository ---"; cat git-check.log; fi
+            if [ -f build.log ]; then
+              grep -E -A 6 "error:" build.log | head -150 || echo "(no error lines found in build.log)"
+            else
+              echo "No build log: the failure happened before the Build step. Open the failed step in the job log."
+            fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload the full logs
+      - name: Upload the full build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-build-log
-          path: |
-            ios/resolve.log
-            ios/build.log
-            ios/git-check.log
+          path: ios/build.log
           if-no-files-found: ignore
+
+  model-check:
+    name: Core ML model matches server model
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install checker
+        run: pip install coremltools onnxruntime "numpy<2.4" pillow
+
+      - name: Compare Core ML and ONNX outputs
+        run: |
+          set -o pipefail
+          python scripts/check_coreml.py --onnx models/shelfcount.onnx --coreml models/ShelfCountModel.mlpackage | tee check.log
+          { echo "### Core ML vs ONNX"; echo '```'; cat check.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the comparison if it failed
+        if: failure()
+        run: |
+          { echo "### Core ML vs ONNX (failed)"; echo '```'; cat check.log 2>/dev/null || echo "(no output)"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

@@ -3,3 +3,5 @@ ultralytics>=8.4
 onnx
 onnxslim
 git+https://github.com/ultralytics/CLIP.git
+coremltools>=9.0
+numpy<2.4   # coremltools 9 fails with NumPy 2.4+

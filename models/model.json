@@ -4,5 +4,9 @@
     "item"
   ],
   "imgsz": 640,
-  "onnx_sha256": "d3a45996ed60153c494815c76c00d3e893df0a336e49b8adf71bbfabf5bca86c"
+  "onnx_sha256": "d3a45996ed60153c494815c76c00d3e893df0a336e49b8adf71bbfabf5bca86c",
+  "coreml": "ShelfCountModel.mlpackage",
+  "coreml_sha256": "800152f0a22963c64c6159c00e2e015acde2d70ff6441040f6e92c5ed57763e3",
+  "coreml_input": "image (640x640 RGB, scaled 1/255 inside the model)",
+  "coreml_output": "[1, 5, 8400] float32"
 }

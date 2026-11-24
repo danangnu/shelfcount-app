@@ -5,9 +5,9 @@
   # zero-shot baseline (YOLOE with text prompts baked in; weak on dense shelves, kept for comparison):
   python scripts/export_model.py --weights yoloe-11s-seg.pt --imgsz 1024
 
-Writes models/shelfcount.onnx + models/model.json. The server loads it with ONNX Runtime (no PyTorch);
-the iPhone app bundles the same file and runs it with ONNX Runtime + Core ML acceleration.
-Optional: --formats onnx coreml  (Core ML export is most reliable on a Mac).
+Writes models/shelfcount.onnx (server, ONNX Runtime, no PyTorch), models/ShelfCountModel.mlpackage
+(iPhone app, Core ML) and models/model.json. Both come from the same weights; scripts/check_coreml.py
+compares their outputs on macOS. Core ML export needs numpy < 2.4 (newer NumPy breaks coremltools 9).
 """
 import argparse
 import hashlib
@@ -23,7 +23,7 @@ def main():
     ap.add_argument("--prompts", nargs="+", default=DEFAULT_PROMPTS)
     ap.add_argument("--imgsz", type=int, default=1024)
     ap.add_argument("--out", default="models")
-    ap.add_argument("--formats", nargs="+", default=["onnx"])
+    ap.add_argument("--formats", nargs="+", default=["onnx", "coreml"])
     a = ap.parse_args()
 
     from ultralytics import YOLO, YOLOE
@@ -46,7 +46,7 @@ def main():
         if fmt == "coreml":
             kw.update(nms=False, half=True)
         path = Path(model.export(**kw))
-        dest = out / ("shelfcount.onnx" if fmt == "onnx" else "ShelfCount.mlpackage")
+        dest = out / ("shelfcount.onnx" if fmt == "onnx" else "ShelfCountModel.mlpackage")
         if dest.exists():
             shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
         shutil.move(str(path), dest)

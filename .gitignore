@@ -4,7 +4,9 @@ runs/
 __pycache__/
 *.pt
 ios/ShelfCount.xcodeproj/
-ios/ShelfCount/Resources/shelfcount.onnx
+ios/Generated/
 ios/ShelfCount/Info.plist
 ios/build.log
 node_modules/
+ios/resolve.log
+ios/git-check.log

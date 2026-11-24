@@ -33,7 +33,7 @@ struct SettingsView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     if let d = OnDeviceDetector.shared {
-                        LabeledContent("On-device engine", value: d.usesCoreML ? "Core ML (Neural Engine)" : "CPU")
+                        LabeledContent("On-device engine", value: d.engineDescription)
                     }
                 }
 

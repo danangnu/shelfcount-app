@@ -5,7 +5,7 @@ Take a photo of a store shelf and get back one number: how many products are on 
 - **Web dashboard**: drag and drop photos (one or many). Each count is shown next to its thumbnail, and you can toggle box overlays and export CSV.
 - **iPhone app** (SwiftUI): photograph a shelf. The app counts on the phone, offline, or sends the photo to the server. History, box overlay, CSV export, and optional sync to the dashboard.
 - **REST API** with OpenAPI docs at `/docs`, so it can be plugged into any audit app.
-- **One model file** (`models/shelfcount.onnx`) is used by both the server and the iPhone app.
+- **One trained model, two formats:** `models/shelfcount.onnx` for the server and `models/ShelfCountModel.mlpackage` (Core ML) for the iPhone, exported from the same weights. A check on GitHub Actions confirms they give the same output.
 
 ```
 shelfcount/
@@ -56,20 +56,20 @@ curl -F file=@samples/shelf.jpg http://localhost:8000/api/count
 
 ## 2. Build the iPhone app
 
-**Without a Mac (GitHub Actions).** Push this folder to a GitHub repository, with `.github/` at the top level and `main` as the branch. The workflow `.github/workflows/ios-build.yml` then compiles the app for the iPhone simulator on a macOS runner. It needs no Apple account or secrets. If it fails, the run's Summary page lists the compile errors and the full log is attached as `ios-build-log`. You can also start it by hand: Actions tab → *iOS build check* → *Run workflow*. Signing and the TestFlight upload are a separate, later workflow.
+**Without a Mac (GitHub Actions).** Push this folder to a GitHub repository, with `.github/` at the top level and `main` as the branch. The workflow `.github/workflows/ios-build.yml` then compiles the app for the iPhone simulator on a macOS runner, and separately checks that the Core ML model matches the server's ONNX model. It needs no Apple account or secrets. If it fails, the run's Summary page lists the compile errors and the full log is attached as `ios-build-log`. You can also start it by hand: Actions tab → *iOS build check* → *Run workflow*. Signing and the TestFlight upload are a separate, later workflow.
 
 **On a Mac.** You need Xcode 15 or later, and an Apple Developer account for a physical device or the App Store.
 
 ```bash
 brew install xcodegen
-cd ios && bash setup.sh       # copies models/shelfcount.onnx into the app, generates ShelfCount.xcodeproj
+cd ios && bash setup.sh       # compiles models/ShelfCountModel.mlpackage, generates ShelfCount.xcodeproj
 open ShelfCount.xcodeproj
 ```
 
 In Xcode, go to *Signing & Capabilities*, choose your Team, change the bundle id if needed, and run on an iPhone (iOS 17+).
-Dependency: [ONNX Runtime Swift package](https://github.com/microsoft/onnxruntime-swift-package-manager). Xcode fetches it automatically.
+No third-party packages: the app uses Apple's Core ML to run the model.
 
-- **On this iPhone** (default): runs offline and uses the Neural Engine via Core ML when available. Photos never leave the phone.
+- **On this iPhone** (default): runs offline with Core ML, which uses the Neural Engine when available. Photos never leave the phone.
 - **On server**: uploads to the server set in Settings, e.g. `http://192.168.1.10:8000` on the same Wi-Fi.
 - **Send on-device counts to dashboard**: after counting on the phone, sends the photo, count and boxes to the server.
 
