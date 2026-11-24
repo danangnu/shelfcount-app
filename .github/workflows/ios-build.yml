@@ -28,15 +28,43 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # keep this repo's token out of git, so it is not sent to other repositories
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Show tool versions
+        run: |
+          xcodebuild -version
+          git --version
+
+      - name: Check that the runner can reach the ONNX Runtime package
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          git ls-remote --tags https://github.com/microsoft/onnxruntime-swift-package-manager 2>&1 | tail -n 8 | tee ios/git-check.log
 
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
 
       - name: Copy the model into the app and generate the Xcode project
         run: bash ios/setup.sh
+
+      - name: Download Swift packages (up to 3 attempts)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            echo "::group::Attempt $attempt"
+            if xcodebuild -resolvePackageDependencies \
+                 -project ShelfCount.xcodeproj -scheme ShelfCount \
+                 -scmProvider system 2>&1 | tee resolve.log; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "Attempt $attempt failed."
+            [ "$attempt" -lt 3 ] && sleep 20
+          done
+          exit 1
 
       - name: Build
         working-directory: ios
@@ -47,24 +75,34 @@ jobs:
             -scheme ShelfCount \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
+            -scmProvider system \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build.log
 
-      - name: Summarise compile errors
+      - name: Summarise what failed
         if: failure()
         working-directory: ios
         run: |
           {
-            echo "### Compile errors"
+            echo "### What failed"
             echo '```'
-            if [ -f build.log ]; then grep -E "error:" build.log | sort -u | head -80; else echo "No build log: the failure happened before the build step."; fi
+            for f in resolve.log build.log; do
+              if [ -f "$f" ]; then
+                echo "--- $f ---"
+                grep -E -A 8 "error:|Failed to clone|fatal:" "$f" | head -120 || echo "(no error lines found)"
+              fi
+            done
+            if [ -f git-check.log ]; then echo "--- plain git check of the package repository ---"; cat git-check.log; fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload the full build log
+      - name: Upload the full logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-build-log
-          path: ios/build.log
+          path: |
+            ios/resolve.log
+            ios/build.log
+            ios/git-check.log
           if-no-files-found: ignore
