@@ -3,6 +3,9 @@
 #
 # Signing uses an App Store Connect API key with Xcode's automatic (cloud-managed) signing,
 # so no certificates or provisioning profiles have to be created or stored by hand.
+# The archive is signed for distribution ("Apple Distribution") straight away: a development
+# signature would need a development profile, and Apple only issues those when at least one
+# iPhone is registered to the team. App Store profiles need no registered devices.
 #
 # Repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret):
 #   APPLE_TEAM_ID    10-character Team ID (developer.apple.com -> Account -> Membership details)
@@ -97,6 +100,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             "${EXTRA[@]}" \
             archive 2>&1 | tee archive.log
