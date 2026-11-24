@@ -58,13 +58,14 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build.log
 
-      - name: Check the model is inside the app
+      - name: Check the model and privacy manifest are inside the app
         working-directory: ios
         run: |
           APP=$(find ~/Library/Developer/Xcode/DerivedData -path '*Debug-iphonesimulator/ShelfCount.app' -type d | head -1)
           echo "App: $APP"
           ls "$APP/ShelfCountModel.mlmodelc"
-          echo "Model is bundled." >> "$GITHUB_STEP_SUMMARY"
+          ls "$APP/PrivacyInfo.xcprivacy"
+          echo "Model and privacy manifest are bundled." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarise what failed
         if: failure()

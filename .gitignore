@@ -1,5 +1,7 @@
+# Server history (photos, SQLite). Anchored to the repo root: on Windows and macOS git ignores case,
+# so a plain "data/" would also hide models/ShelfCountModel.mlpackage/Data/.
 /data/
-runs/
+/runs/
 .venv/
 __pycache__/
 *.pt

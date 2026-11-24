@@ -42,6 +42,8 @@ targets:
       path: ShelfCount/Info.plist
       properties:
         CFBundleDisplayName: ShelfCount
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSCameraUsageDescription: ShelfCount uses the camera to photograph shelves and count the products on them.

@@ -1,0 +1,168 @@
+# Signed build of the iPhone app, uploaded to App Store Connect / TestFlight.
+# Runs only when started by hand: Actions tab -> "iOS TestFlight upload" -> Run workflow.
+#
+# Signing uses an App Store Connect API key with Xcode's automatic (cloud-managed) signing,
+# so no certificates or provisioning profiles have to be created or stored by hand.
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions -> New repository secret):
+#   APPLE_TEAM_ID    10-character Team ID (developer.apple.com -> Account -> Membership details)
+#   ASC_KEY_ID       Key ID of the App Store Connect API key
+#   ASC_ISSUER_ID    Issuer ID shown above the key list in App Store Connect
+#   ASC_KEY_P8       Full text of the downloaded AuthKey_XXXXXXXXXX.p8 file, including the BEGIN/END lines
+name: iOS TestFlight upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: "Version shown in the App Store (leave empty to use the one in ios/project.yml)"
+        required: false
+        default: ""
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    name: Archive, sign and upload to TestFlight
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      # Each upload needs a build number higher than the last one; the workflow's run number always grows.
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check the secrets are set
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          missing=""
+          for v in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do [ -n "${!v}" ] || missing="$missing $v"; done
+          if [ -n "$missing" ]; then
+            echo "Missing repository secrets:$missing" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          case "$ASC_KEY_P8" in *"BEGIN PRIVATE KEY"*) ;; *) echo "ASC_KEY_P8 must be the whole .p8 file, including the BEGIN PRIVATE KEY line." | tee -a "$GITHUB_STEP_SUMMARY"; exit 1;; esac
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+
+      - name: Compile the Core ML model and generate the Xcode project
+        run: bash ios/setup.sh
+
+      - name: Write the API key to a temporary file
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          KEY_DIR="$RUNNER_TEMP/asc"
+          mkdir -p "$KEY_DIR" && chmod 700 "$KEY_DIR"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY_DIR/AuthKey_$ASC_KEY_ID.p8"
+          chmod 600 "$KEY_DIR/AuthKey_$ASC_KEY_ID.p8"
+          echo "ASC_KEY_PATH=$KEY_DIR/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+
+      - name: Archive (Release, signed)
+        working-directory: ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          MARKETING_INPUT: ${{ inputs.marketing_version }}
+        run: |
+          set -o pipefail
+          EXTRA=()
+          if [ -n "$MARKETING_INPUT" ]; then EXTRA+=("MARKETING_VERSION=$MARKETING_INPUT"); fi
+          xcodebuild \
+            -project ShelfCount.xcodeproj \
+            -scheme ShelfCount \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/ShelfCount.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            "${EXTRA[@]}" \
+            archive 2>&1 | tee archive.log
+
+      - name: Upload to App Store Connect
+        working-directory: ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/ShelfCount.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 | tee export.log
+          {
+            echo "### Uploaded"
+            echo "Build number **$BUILD_NUMBER** was sent to App Store Connect."
+            echo "Apple processes it for 5 to 30 minutes; it then appears under TestFlight in App Store Connect."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarise what failed
+        if: failure()
+        working-directory: ios
+        run: |
+          {
+            echo "### What failed"
+            echo '```'
+            for f in archive.log export.log; do
+              if [ -f "$f" ]; then
+                echo "--- $f ---"
+                grep -E -B 2 -A 8 "error:|ERROR|Error Domain|No profiles|No signing certificate|requires a provisioning profile" "$f" | head -150 || echo "(no error lines found)"
+              fi
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-logs
+          path: |
+            ios/archive.log
+            ios/export.log
+          if-no-files-found: ignore

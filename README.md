@@ -56,7 +56,16 @@ curl -F file=@samples/shelf.jpg http://localhost:8000/api/count
 
 ## 2. Build the iPhone app
 
-**Without a Mac (GitHub Actions).** Push this folder to a GitHub repository, with `.github/` at the top level and `main` as the branch. The workflow `.github/workflows/ios-build.yml` then compiles the app for the iPhone simulator on a macOS runner, and separately checks that the Core ML model matches the server's ONNX model. It needs no Apple account or secrets. If it fails, the run's Summary page lists the compile errors and the full log is attached as `ios-build-log`. You can also start it by hand: Actions tab → *iOS build check* → *Run workflow*. Signing and the TestFlight upload are a separate, later workflow.
+**Without a Mac (GitHub Actions).** Push this folder to a GitHub repository, with `.github/` at the top level and `main` as the branch. The workflow `.github/workflows/ios-build.yml` then compiles the app for the iPhone simulator on a macOS runner, and separately checks that the Core ML model matches the server's ONNX model. It needs no Apple account or secrets. If it fails, the run's Summary page lists the compile errors and the full log is attached as `ios-build-log`. You can also start it by hand: Actions tab → *iOS build check* → *Run workflow*.
+
+**TestFlight upload (GitHub Actions).** `.github/workflows/ios-testflight.yml` archives a signed Release build and uploads it to App Store Connect. It runs only when started by hand (Actions tab → *iOS TestFlight upload* → *Run workflow*). One-time setup:
+
+1. In the Apple Developer site, register the App ID `com.harianda.shelfcount` (Certificates, Identifiers & Profiles → Identifiers).
+2. In App Store Connect, create the app (My Apps → + → New App) with that bundle ID.
+3. In App Store Connect → Users and Access → Integrations → App Store Connect API, create a **Team** key with **Admin** access (needed for cloud-managed signing). Download the `.p8` file; Apple lets you download it only once.
+4. In the GitHub repository → Settings → Secrets and variables → Actions, add `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8` (the whole `.p8` file text).
+
+The build number is the workflow's run number, so every upload is higher than the last. After upload, Apple processes the build for a few minutes before it appears under TestFlight.
 
 **On a Mac.** You need Xcode 15 or later, and an Apple Developer account for a physical device or the App Store.
 
