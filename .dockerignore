@@ -1,0 +1,7 @@
+data/
+samples/
+ios/
+runs/
+**/__pycache__
+.venv/
+*.pt

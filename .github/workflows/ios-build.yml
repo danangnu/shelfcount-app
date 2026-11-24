@@ -1,0 +1,70 @@
+# Build check: generates the Xcode project and compiles the iPhone app for the simulator.
+# Needs no Apple account, certificates or secrets. It only proves that the app compiles.
+# Signing and the upload to TestFlight come in a separate workflow.
+name: iOS build check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - "models/**"
+      - ".github/workflows/ios-build.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - "models/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch:   # lets you start it by hand from the Actions tab
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compile for iPhone simulator
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+
+      - name: Copy the model into the app and generate the Xcode project
+        run: bash ios/setup.sh
+
+      - name: Build
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ShelfCount.xcodeproj \
+            -scheme ShelfCount \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build.log
+
+      - name: Summarise compile errors
+        if: failure()
+        working-directory: ios
+        run: |
+          {
+            echo "### Compile errors"
+            echo '```'
+            if [ -f build.log ]; then grep -E "error:" build.log | sort -u | head -80; else echo "No build log: the failure happened before the build step."; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the full build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log
+          path: ios/build.log
+          if-no-files-found: ignore

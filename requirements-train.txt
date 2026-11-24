@@ -1,0 +1,5 @@
+# Model building / fine-tuning only (GPU machine recommended)
+ultralytics>=8.4
+onnx
+onnxslim
+git+https://github.com/ultralytics/CLIP.git

@@ -1,0 +1,14 @@
+services:
+  shelfcount:
+    build: .
+    image: shelfcount:1.0
+    ports:
+      - "8000:8000"
+    volumes:
+      - shelfcount-data:/data
+    environment:
+      SHELFCOUNT_CONF: "0.65"        # default detection confidence
+      SHELFCOUNT_API_KEY: ""         # set to require X-API-Key on API calls
+    restart: unless-stopped
+volumes:
+  shelfcount-data:

@@ -1,0 +1,8 @@
+{
+  "source_weights": "last.pt",
+  "classes": [
+    "item"
+  ],
+  "imgsz": 640,
+  "onnx_sha256": "d3a45996ed60153c494815c76c00d3e893df0a336e49b8adf71bbfabf5bca86c"
+}

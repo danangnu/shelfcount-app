@@ -1,0 +1,10 @@
+data/
+runs/
+.venv/
+__pycache__/
+*.pt
+ios/ShelfCount.xcodeproj/
+ios/ShelfCount/Resources/shelfcount.onnx
+ios/ShelfCount/Info.plist
+ios/build.log
+node_modules/
